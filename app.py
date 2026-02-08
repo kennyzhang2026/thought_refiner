@@ -325,33 +325,6 @@ def render_status_badge():
 
 def render_voice_input():
     """渲染语音输入组件"""
-    # 从 URL 参数中读取语音结果
-    query_params = st.query_params
-    if "voice_result" in query_params:
-        voice_text = query_params["voice_result"]
-        # 清除 URL 参数
-        st.query_params.clear()
-        # 存储到 session state
-        st.session_state["voice_result"] = voice_text
-        st.rerun()
-
-    # 如果有待插入的语音结果，显示插入按钮
-    if st.session_state.get("voice_result", ""):
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            st.success(f"✅ 识别完成：{st.session_state['voice_result']}")
-        with col2:
-            if st.button("📥 插入", use_container_width=True, key="insert_voice"):
-                current = st.session_state.get("input_text", "")
-                new_text = current + ("\n" if current else "") + st.session_state["voice_result"]
-                st.session_state["input_text"] = new_text
-                st.session_state["voice_result"] = ""
-                st.rerun()
-        if st.button("❌ 取消", use_container_width=True, key="cancel_voice"):
-            st.session_state["voice_result"] = ""
-            st.rerun()
-        return
-
     # 使用HTML和JS实现语音录入
     voice_html = """
     <div class="voice-btn-container">
@@ -361,6 +334,8 @@ def render_voice_input():
         </button>
         <span id="voiceStatus" class="voice-status">点击按钮开始语音输入</span>
     </div>
+    <input type="hidden" id="voiceResultInput" value="">
+    <div id="voicePreview" style="display:none; margin-top: 10px; padding: 15px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #667eea;"></div>
 
     <script>
         let recognition = null;
@@ -394,17 +369,11 @@ def render_voice_input():
 
                 if (finalTranscriptText) {
                     document.getElementById('voiceStatus').textContent = '识别完成！';
-                    // 使用 URL 参数传递语音结果
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('voice_result', encodeURIComponent(finalTranscriptText));
+                    // 显示预览区域
+                    const preview = document.getElementById('voicePreview');
+                    preview.style.display = 'block';
+                    preview.innerHTML = '<strong>语音识别结果：</strong><br><br>' + finalTranscriptText + '<br><br><button onclick="confirmVoice()" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">✅ 确认插入</button><button onclick="cancelVoice()" style="background: #999; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">❌ 取消</button>';
                     console.log('语音结果:', finalTranscriptText);
-                    console.log('新URL:', url.toString());
-                    // 使用 replaceState 更新 URL 而不是跳转，这样不会刷新页面
-                    window.history.replaceState({}, '', url.toString());
-                    // 手动触发页面刷新
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 100);
                 } else {
                     document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
                 }
@@ -462,9 +431,32 @@ def render_voice_input():
                     });
             }
         }
+
+        function confirmVoice() {
+            const textArea = document.querySelector('textarea[data-testid="stTextArea"]');
+            if (textArea && finalTranscriptText) {
+                const current = textArea.value;
+                textArea.value = current + (current ? '\\n' : '') + finalTranscriptText;
+                textArea.dispatchEvent(new Event('input', { bubbles: true }));
+                textArea.dispatchEvent(new Event('change', { bubbles: true }));
+                textArea.focus();
+                // 隐藏预览
+                document.getElementById('voicePreview').style.display = 'none';
+                document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
+                console.log('文字已插入到文本框');
+            } else {
+                alert('无法找到文本框，请刷新页面重试');
+            }
+        }
+
+        function cancelVoice() {
+            document.getElementById('voicePreview').style.display = 'none';
+            document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
+            finalTranscriptText = '';
+        }
     </script>
     """
-    st.components.v1.html(voice_html, height=100)
+    st.components.v1.html(voice_html, height=150)
 
 def render_input_stage():
     """渲染输入阶段"""
