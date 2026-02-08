@@ -4,6 +4,7 @@
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import logging
 from datetime import datetime
 from deepseek_client import DeepSeekClient
@@ -110,6 +111,56 @@ st.markdown("""
         padding: 1rem;
         margin: 1rem 0;
         color: #155724;
+    }
+
+    /* 语音按钮样式 */
+    .voice-btn-container {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .voice-btn {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        font-size: 1.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(238, 90, 111, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .voice-btn:hover {
+        transform: scale(1.05);
+        box-shadow: 0 6px 20px rgba(238, 90, 111, 0.4);
+    }
+
+    .voice-btn.recording {
+        background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%);
+        animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+        0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); }
+        70% { box-shadow: 0 0 0 20px rgba(255, 71, 87, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
+    }
+
+    .voice-status {
+        font-size: 0.9rem;
+        color: #666;
+        margin-left: 0.5rem;
+    }
+
+    .voice-status.recording {
+        color: #ff4757;
+        font-weight: 500;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -255,20 +306,118 @@ def render_status_badge():
     text, css_class = status_map.get(stage, ("未知", "status-waiting"))
     st.markdown(f'<span class="status-badge {css_class}">{text}</span>', unsafe_allow_html=True)
 
+def render_voice_input():
+    """渲染语音输入组件"""
+    # 使用HTML和JS实现语音录入
+    voice_html = """
+    <div class="voice-btn-container">
+        <button id="voiceBtn" class="voice-btn" onclick="toggleRecording()" title="点击开始语音输入">
+            🎤
+        </button>
+        <span id="voiceStatus" class="voice-status">点击麦克风开始语音输入</span>
+    </div>
+
+    <script>
+        let recognition = null;
+        let isRecording = false;
+
+        // 检查浏览器是否支持语音识别
+        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            recognition = new SpeechRecognition();
+            recognition.lang = 'zh-CN';
+            recognition.continuous = true;
+            recognition.interimResults = true;
+
+            recognition.onstart = function() {
+                isRecording = true;
+                document.getElementById('voiceBtn').classList.add('recording');
+                document.getElementById('voiceStatus').textContent = '正在录音... (再次点击停止)';
+                document.getElementById('voiceStatus').classList.add('recording');
+            };
+
+            recognition.onend = function() {
+                isRecording = false;
+                document.getElementById('voiceBtn').classList.remove('recording');
+                document.getElementById('voiceStatus').textContent = '点击麦克风开始语音输入';
+                document.getElementById('voiceStatus').classList.remove('recording');
+            };
+
+            recognition.onresult = function(event) {
+                let finalTranscript = '';
+                let interimTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript;
+                    if (event.results[i].isFinal) {
+                        finalTranscript += transcript;
+                    } else {
+                        interimTranscript += transcript;
+                    }
+                }
+
+                // 获取当前文本框内容
+                const textArea = window.parent.document.querySelector('textarea[data-testid="stTextArea"]');
+                if (textArea && finalTranscript) {
+                    const currentValue = textArea.value;
+                    textArea.value = currentValue + (currentValue ? ' ' : '') + finalTranscript;
+                    // 触发input事件让Streamlit检测到变化
+                    textArea.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+            };
+
+            recognition.onerror = function(event) {
+                console.error('语音识别错误:', event.error);
+                document.getElementById('voiceStatus').textContent = '语音识别出错，请重试';
+                isRecording = false;
+                document.getElementById('voiceBtn').classList.remove('recording');
+            };
+        } else {
+            document.getElementById('voiceStatus').textContent = '您的浏览器不支持语音识别';
+            document.getElementById('voiceBtn').disabled = true;
+        }
+
+        function toggleRecording() {
+            if (!recognition) {
+                alert('您的浏览器不支持语音识别功能，请使用 Chrome、Edge 或 Safari 浏览器');
+                return;
+            }
+
+            if (isRecording) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        }
+    </script>
+    """
+    st.components.v1.html(voice_html, height=70)
+
 def render_input_stage():
     """渲染输入阶段"""
     st.markdown("### 📝 输入你的想法")
 
+    # 语音输入提示
+    st.caption("🎤 支持语音输入，点击下方麦克风按钮")
+
     user_input = st.text_area(
         "",
-        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析",
+        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析\n\n或者点击下方的 🎤 按钮开始语音输入",
         height=200,
         key="input_text"
     )
 
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🚀 开始提炼", use_container_width=True):
+    # 语音录入按钮和开始提炼按钮并排
+    col1, col2, col3 = st.columns([1, 1, 2])
+
+    with col1:
+        # 语音输入组件
+        render_voice_input()
+
+    with col3:
+        if st.button("🚀 开始提炼", use_container_width=True, type="primary"):
+            # 获取最新的输入值（包括语音输入的）
+            user_input = st.session_state.get("input_text", "")
             if not user_input.strip():
                 st.warning("⚠️ 请输入内容后再点击提炼")
                 return
