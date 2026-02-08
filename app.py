@@ -367,64 +367,13 @@ def render_voice_input():
         let isRecording = false;
         let finalTranscriptText = '';
 
-        // 尝试找到并更新文本框
-        function findAndSetText(text) {
-            // 尝试多种方法找到文本框
-            const methods = [
-                // 方法1: 当前文档
-                () => document.querySelector('textarea[data-testid="stTextArea"]'),
-                // 方法2: 父文档
-                () => window.parent.document.querySelector('textarea[data-testid="stTextArea"]'),
-                // 方法3: 多层iframe查找
-                () => {
-                    let doc = window.document;
-                    for (let i = 0; i < 3; i++) {
-                        const ta = doc.querySelector('textarea');
-                        if (ta && ta.getAttribute('data-testid') && ta.getAttribute('data-testid').includes('TextArea')) {
-                            return ta;
-                        }
-                        try {
-                            doc = window.parent.document;
-                        } catch (e) {
-                            break;
-                        }
-                    }
-                    return null;
-                },
-                // 方法4: 查找所有textarea
-                () => {
-                    const textareas = window.document.querySelectorAll('textarea');
-                    return textareas[0];
-                }
-            ];
-
-            for (const method of methods) {
-                try {
-                    const ta = method();
-                    if (ta) {
-                        const current = ta.value;
-                        ta.value = current + (current ? '\\n' : '') + text;
-                        // 触发事件
-                        ta.dispatchEvent(new Event('input', { bubbles: true }));
-                        ta.dispatchEvent(new Event('change', { bubbles: true }));
-                        ta.focus();
-                        console.log('成功更新文本框');
-                        return true;
-                    }
-                } catch (e) {
-                    console.log('方法失败:', e);
-                }
-            }
-            return false;
-        }
-
         // 检查浏览器是否支持语音识别
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.lang = 'zh-CN';
             recognition.continuous = false;
-            recognition.interimResults = true;
+            recognition.interimResults = false;
 
             recognition.onstart = function() {
                 isRecording = true;
@@ -445,19 +394,17 @@ def render_voice_input():
 
                 if (finalTranscriptText) {
                     document.getElementById('voiceStatus').textContent = '识别完成！';
-                    // 直接更新文本框
-                    const success = findAndSetText(finalTranscriptText);
-                    if (!success) {
-                        // 如果直接更新失败，使用URL参数
-                        const url = new URL(window.location.href);
-                        url.searchParams.set('voice_result', encodeURIComponent(finalTranscriptText));
-                        window.location.href = url.toString();
-                    } else {
-                        // 更新成功，2秒后恢复状态
-                        setTimeout(() => {
-                            document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
-                        }, 2000);
-                    }
+                    // 使用 URL 参数传递语音结果
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('voice_result', encodeURIComponent(finalTranscriptText));
+                    console.log('语音结果:', finalTranscriptText);
+                    console.log('新URL:', url.toString());
+                    // 使用 replaceState 更新 URL 而不是跳转，这样不会刷新页面
+                    window.history.replaceState({}, '', url.toString());
+                    // 手动触发页面刷新
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 100);
                 } else {
                     document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
                 }
@@ -470,7 +417,7 @@ def render_voice_input():
                 }
                 if (transcript) {
                     finalTranscriptText = transcript;
-                    document.getElementById('voiceStatus').textContent = '识别: ' + transcript.substring(0, 15) + (transcript.length > 15 ? '...' : '');
+                    document.getElementById('voiceStatus').textContent = '识别中...';
                 }
             };
 
