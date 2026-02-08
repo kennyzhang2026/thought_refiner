@@ -316,31 +316,42 @@ def render_voice_input():
         </button>
         <span id="voiceStatus" class="voice-status">点击麦克风开始语音输入</span>
     </div>
+    <div id="voiceTempText" style="display:none;"></div>
 
     <script>
         let recognition = null;
         let isRecording = false;
+        let finalTranscriptText = '';
 
         // 检查浏览器是否支持语音识别
         if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.lang = 'zh-CN';
-            recognition.continuous = true;
-            recognition.interimResults = true;
+            recognition.continuous = false; // 每次录音结束后自动停止
+            recognition.interimResults = true; // 显示临时结果
 
             recognition.onstart = function() {
                 isRecording = true;
                 document.getElementById('voiceBtn').classList.add('recording');
                 document.getElementById('voiceStatus').textContent = '正在录音... (再次点击停止)';
                 document.getElementById('voiceStatus').classList.add('recording');
+                finalTranscriptText = '';
             };
 
             recognition.onend = function() {
                 isRecording = false;
                 document.getElementById('voiceBtn').classList.remove('recording');
-                document.getElementById('voiceStatus').textContent = '点击麦克风开始语音输入';
-                document.getElementById('voiceStatus').classList.remove('recording');
+                if (finalTranscriptText) {
+                    document.getElementById('voiceStatus').textContent = '识别完成！请点击"插入语音"';
+                    // 将结果保存到临时元素
+                    document.getElementById('voiceTempText').textContent = finalTranscriptText;
+                    // 尝试通过多种方式更新输入框
+                    updateTextArea(finalTranscriptText);
+                } else {
+                    document.getElementById('voiceStatus').textContent = '点击麦克风开始语音输入';
+                    document.getElementById('voiceStatus').classList.remove('recording');
+                }
             };
 
             recognition.onresult = function(event) {
@@ -356,25 +367,69 @@ def render_voice_input():
                     }
                 }
 
-                // 获取当前文本框内容
-                const textArea = window.parent.document.querySelector('textarea[data-testid="stTextArea"]');
-                if (textArea && finalTranscript) {
-                    const currentValue = textArea.value;
-                    textArea.value = currentValue + (currentValue ? ' ' : '') + finalTranscript;
-                    // 触发input事件让Streamlit检测到变化
-                    textArea.dispatchEvent(new Event('input', { bubbles: true }));
+                if (interimTranscript) {
+                    document.getElementById('voiceStatus').textContent = '识别中: ' + interimTranscript;
+                }
+
+                if (finalTranscript) {
+                    finalTranscriptText += finalTranscript;
                 }
             };
 
             recognition.onerror = function(event) {
                 console.error('语音识别错误:', event.error);
-                document.getElementById('voiceStatus').textContent = '语音识别出错，请重试';
+                let errorMsg = '语音识别出错';
+                if (event.error === 'no-speech') {
+                    errorMsg = '未检测到语音，请重试';
+                } else if (event.error === 'not-allowed') {
+                    errorMsg = '麦克风权限被拒绝';
+                }
+                document.getElementById('voiceStatus').textContent = errorMsg;
                 isRecording = false;
                 document.getElementById('voiceBtn').classList.remove('recording');
             };
         } else {
             document.getElementById('voiceStatus').textContent = '您的浏览器不支持语音识别';
             document.getElementById('voiceBtn').disabled = true;
+            document.getElementById('voiceBtn').style.opacity = '0.5';
+        }
+
+        function updateTextArea(text) {
+            // 尝试多种方式找到并更新文本框
+            try {
+                // 方法1: 尝试通过主窗口访问 (需要同源)
+                const win = window;
+                let doc = win.document;
+
+                // 先在当前iframe中查找
+                let textAreas = doc.querySelectorAll('textarea');
+
+                // 尝试不同的选择器
+                if (textAreas.length === 0) {
+                    // 尝试父窗口
+                    try {
+                        doc = window.parent.document;
+                        textAreas = doc.querySelectorAll('textarea');
+                    } catch (e) {
+                        console.log('无法访问父窗口');
+                    }
+                }
+
+                // 找到数据-testid包含stTextArea的元素
+                for (let ta of textAreas) {
+                    if (ta.getAttribute('data-testid') && ta.getAttribute('data-testid').includes('TextArea')) {
+                        const currentValue = ta.value;
+                        ta.value = currentValue + (currentValue ? '\\n' : '') + text;
+                        // 触发多种事件
+                        ta.dispatchEvent(new Event('input', { bubbles: true }));
+                        ta.dispatchEvent(new Event('change', { bubbles: true }));
+                        ta.dispatchEvent(new Event('blur', { bubbles: true }));
+                        break;
+                    }
+                }
+            } catch (e) {
+                console.log('更新文本框失败:', e);
+            }
         }
 
         function toggleRecording() {
@@ -386,12 +441,22 @@ def render_voice_input():
             if (isRecording) {
                 recognition.stop();
             } else {
-                recognition.start();
+                finalTranscriptText = '';
+                // 检查麦克风权限
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(function(stream) {
+                        stream.getTracks().forEach(track => track.stop());
+                        recognition.start();
+                    })
+                    .catch(function(err) {
+                        alert('无法访问麦克风，请确保已授予权限');
+                        document.getElementById('voiceStatus').textContent = '麦克风权限被拒绝';
+                    });
             }
         }
     </script>
     """
-    st.components.v1.html(voice_html, height=70)
+    st.components.v1.html(voice_html, height=90)
 
 def render_input_stage():
     """渲染输入阶段"""
