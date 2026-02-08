@@ -116,51 +116,67 @@ st.markdown("""
     /* 语音按钮样式 */
     .voice-btn-container {
         display: flex;
+        flex-direction: column;
         align-items: center;
         gap: 0.5rem;
     }
 
     .voice-btn {
-        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
-        border-radius: 50%;
-        width: 50px;
-        height: 50px;
-        font-size: 1.5rem;
+        border-radius: 8px;
+        width: 120px;
+        height: 42px;
+        font-size: 1rem;
         cursor: pointer;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(238, 90, 111, 0.3);
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
         display: flex;
         align-items: center;
         justify-content: center;
+        gap: 0.3rem;
     }
 
     .voice-btn:hover {
-        transform: scale(1.05);
-        box-shadow: 0 6px 20px rgba(238, 90, 111, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .voice-btn:active {
+        transform: translateY(0);
     }
 
     .voice-btn.recording {
-        background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%);
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
         animation: pulse 1.5s infinite;
     }
 
     @keyframes pulse {
-        0% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0.4); }
-        70% { box-shadow: 0 0 0 20px rgba(255, 71, 87, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
+        0% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0.4); }
+        70% { box-shadow: 0 0 0 15px rgba(245, 87, 108, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0); }
     }
 
     .voice-status {
-        font-size: 0.9rem;
+        font-size: 0.85rem;
         color: #666;
-        margin-left: 0.5rem;
+        text-align: center;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
     }
 
     .voice-status.recording {
-        color: #ff4757;
+        color: #f5576c;
         font-weight: 500;
+        animation: blink 1s infinite;
+    }
+
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -208,6 +224,7 @@ def init_session_state():
         "conversation_history": [],  # 记录对话历史用于迭代
         "current_version": 0,
         "feishu_saved": False,
+        "voice_result": "",  # 语音识别结果
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -308,15 +325,32 @@ def render_status_badge():
 
 def render_voice_input():
     """渲染语音输入组件"""
+    # 如果有待插入的语音结果，显示插入按钮
+    if st.session_state.get("voice_result", ""):
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.success(f"✅ 识别完成：{st.session_state['voice_result']}")
+        with col2:
+            if st.button("📥 插入", use_container_width=True, key="insert_voice"):
+                current = st.session_state.get("input_text", "")
+                new_text = current + ("\n" if current else "") + st.session_state["voice_result"]
+                st.session_state["input_text"] = new_text
+                st.session_state["voice_result"] = ""
+                st.rerun()
+        if st.button("❌ 取消", use_container_width=True, key="cancel_voice"):
+            st.session_state["voice_result"] = ""
+            st.rerun()
+        return
+
     # 使用HTML和JS实现语音录入
     voice_html = """
     <div class="voice-btn-container">
-        <button id="voiceBtn" class="voice-btn" onclick="toggleRecording()" title="点击开始语音输入">
-            🎤
+        <button id="voiceBtn" class="voice-btn" onclick="toggleRecording()">
+            <span id="voiceIcon">🎤</span>
+            <span id="voiceText">点击录音</span>
         </button>
-        <span id="voiceStatus" class="voice-status">点击麦克风开始语音输入</span>
+        <span id="voiceStatus" class="voice-status">点击按钮开始语音输入</span>
     </div>
-    <div id="voiceTempText" style="display:none;"></div>
 
     <script>
         let recognition = null;
@@ -328,13 +362,15 @@ def render_voice_input():
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
             recognition = new SpeechRecognition();
             recognition.lang = 'zh-CN';
-            recognition.continuous = false; // 每次录音结束后自动停止
-            recognition.interimResults = true; // 显示临时结果
+            recognition.continuous = false;
+            recognition.interimResults = false;
 
             recognition.onstart = function() {
                 isRecording = true;
                 document.getElementById('voiceBtn').classList.add('recording');
-                document.getElementById('voiceStatus').textContent = '正在录音... (再次点击停止)';
+                document.getElementById('voiceIcon').textContent = '⏸';
+                document.getElementById('voiceText').textContent = '停止录音';
+                document.getElementById('voiceStatus').textContent = '正在录音...';
                 document.getElementById('voiceStatus').classList.add('recording');
                 finalTranscriptText = '';
             };
@@ -342,37 +378,31 @@ def render_voice_input():
             recognition.onend = function() {
                 isRecording = false;
                 document.getElementById('voiceBtn').classList.remove('recording');
+                document.getElementById('voiceIcon').textContent = '🎤';
+                document.getElementById('voiceText').textContent = '点击录音';
+                document.getElementById('voiceStatus').classList.remove('recording');
+
                 if (finalTranscriptText) {
-                    document.getElementById('voiceStatus').textContent = '识别完成！请点击"插入语音"';
-                    // 将结果保存到临时元素
-                    document.getElementById('voiceTempText').textContent = finalTranscriptText;
-                    // 尝试通过多种方式更新输入框
-                    updateTextArea(finalTranscriptText);
+                    document.getElementById('voiceStatus').textContent = '识别完成！请点击下方插入按钮';
+                    // 存储结果，等待用户点击插入
+                    window.voiceTranscript = finalTranscriptText;
+                    // 触发页面刷新来显示插入按钮
+                    setTimeout(function() {
+                        location.reload();
+                    }, 500);
                 } else {
-                    document.getElementById('voiceStatus').textContent = '点击麦克风开始语音输入';
-                    document.getElementById('voiceStatus').classList.remove('recording');
+                    document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
                 }
             };
 
             recognition.onresult = function(event) {
-                let finalTranscript = '';
-                let interimTranscript = '';
-
+                let transcript = '';
                 for (let i = event.resultIndex; i < event.results.length; i++) {
-                    const transcript = event.results[i][0].transcript;
-                    if (event.results[i].isFinal) {
-                        finalTranscript += transcript;
-                    } else {
-                        interimTranscript += transcript;
-                    }
+                    transcript += event.results[i][0].transcript;
                 }
-
-                if (interimTranscript) {
-                    document.getElementById('voiceStatus').textContent = '识别中: ' + interimTranscript;
-                }
-
-                if (finalTranscript) {
-                    finalTranscriptText += finalTranscript;
+                if (transcript) {
+                    finalTranscriptText = transcript;
+                    document.getElementById('voiceStatus').textContent = '已识别: ' + transcript.substring(0, 20) + (transcript.length > 20 ? '...' : '');
                 }
             };
 
@@ -380,56 +410,20 @@ def render_voice_input():
                 console.error('语音识别错误:', event.error);
                 let errorMsg = '语音识别出错';
                 if (event.error === 'no-speech') {
-                    errorMsg = '未检测到语音，请重试';
+                    errorMsg = '未检测到语音';
                 } else if (event.error === 'not-allowed') {
                     errorMsg = '麦克风权限被拒绝';
                 }
                 document.getElementById('voiceStatus').textContent = errorMsg;
                 isRecording = false;
                 document.getElementById('voiceBtn').classList.remove('recording');
+                document.getElementById('voiceIcon').textContent = '🎤';
+                document.getElementById('voiceText').textContent = '点击录音';
             };
         } else {
             document.getElementById('voiceStatus').textContent = '您的浏览器不支持语音识别';
             document.getElementById('voiceBtn').disabled = true;
             document.getElementById('voiceBtn').style.opacity = '0.5';
-        }
-
-        function updateTextArea(text) {
-            // 尝试多种方式找到并更新文本框
-            try {
-                // 方法1: 尝试通过主窗口访问 (需要同源)
-                const win = window;
-                let doc = win.document;
-
-                // 先在当前iframe中查找
-                let textAreas = doc.querySelectorAll('textarea');
-
-                // 尝试不同的选择器
-                if (textAreas.length === 0) {
-                    // 尝试父窗口
-                    try {
-                        doc = window.parent.document;
-                        textAreas = doc.querySelectorAll('textarea');
-                    } catch (e) {
-                        console.log('无法访问父窗口');
-                    }
-                }
-
-                // 找到数据-testid包含stTextArea的元素
-                for (let ta of textAreas) {
-                    if (ta.getAttribute('data-testid') && ta.getAttribute('data-testid').includes('TextArea')) {
-                        const currentValue = ta.value;
-                        ta.value = currentValue + (currentValue ? '\\n' : '') + text;
-                        // 触发多种事件
-                        ta.dispatchEvent(new Event('input', { bubbles: true }));
-                        ta.dispatchEvent(new Event('change', { bubbles: true }));
-                        ta.dispatchEvent(new Event('blur', { bubbles: true }));
-                        break;
-                    }
-                }
-            } catch (e) {
-                console.log('更新文本框失败:', e);
-            }
         }
 
         function toggleRecording() {
@@ -442,7 +436,6 @@ def render_voice_input():
                 recognition.stop();
             } else {
                 finalTranscriptText = '';
-                // 检查麦克风权限
                 navigator.mediaDevices.getUserMedia({ audio: true })
                     .then(function(stream) {
                         stream.getTracks().forEach(track => track.stop());
@@ -456,18 +449,18 @@ def render_voice_input():
         }
     </script>
     """
-    st.components.v1.html(voice_html, height=90)
+    st.components.v1.html(voice_html, height=100)
 
 def render_input_stage():
     """渲染输入阶段"""
     st.markdown("### 📝 输入你的想法")
 
     # 语音输入提示
-    st.caption("🎤 支持语音输入，点击下方麦克风按钮")
+    st.caption("🎤 支持语音输入，点击下方按钮")
 
     user_input = st.text_area(
         "",
-        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析\n\n或者点击下方的 🎤 按钮开始语音输入",
+        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析\n\n或者点击下方的语音按钮开始语音输入",
         height=200,
         key="input_text"
     )
