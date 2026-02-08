@@ -325,6 +325,16 @@ def render_status_badge():
 
 def render_voice_input():
     """渲染语音输入组件"""
+    # 从 URL 参数中读取语音结果
+    query_params = st.query_params
+    if "voice_result" in query_params:
+        voice_text = query_params["voice_result"]
+        # 清除 URL 参数
+        st.query_params.clear()
+        # 存储到 session state
+        st.session_state["voice_result"] = voice_text
+        st.rerun()
+
     # 如果有待插入的语音结果，显示插入按钮
     if st.session_state.get("voice_result", ""):
         col1, col2 = st.columns([2, 1])
@@ -383,13 +393,11 @@ def render_voice_input():
                 document.getElementById('voiceStatus').classList.remove('recording');
 
                 if (finalTranscriptText) {
-                    document.getElementById('voiceStatus').textContent = '识别完成！请点击下方插入按钮';
-                    // 存储结果，等待用户点击插入
-                    window.voiceTranscript = finalTranscriptText;
-                    // 触发页面刷新来显示插入按钮
-                    setTimeout(function() {
-                        location.reload();
-                    }, 500);
+                    document.getElementById('voiceStatus').textContent = '识别完成！';
+                    // 使用 URL 参数传递语音结果
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('voice_result', encodeURIComponent(finalTranscriptText));
+                    window.location.href = url.toString();
                 } else {
                     document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
                 }
@@ -402,7 +410,7 @@ def render_voice_input():
                 }
                 if (transcript) {
                     finalTranscriptText = transcript;
-                    document.getElementById('voiceStatus').textContent = '已识别: ' + transcript.substring(0, 20) + (transcript.length > 20 ? '...' : '');
+                    document.getElementById('voiceStatus').textContent = '识别中...';
                 }
             };
 
