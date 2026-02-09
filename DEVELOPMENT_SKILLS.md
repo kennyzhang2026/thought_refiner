@@ -1189,4 +1189,230 @@ logger.error(f"API 请求失败: {error_message}")
 
 **文档维护**: 请在应用新技能或发现新模式时及时更新本文档。
 
-**最后更新**: 2026-02-08
+---
+
+## 13. 思路提炼助手项目 - 专项技能
+
+> 记录本次项目特有的开发经验和踩坑总结
+
+### 13.1 双栏布局设计模式
+
+**场景**: 左侧输入内容，右侧显示 AI 处理结果
+
+**实现方式**:
+```python
+def render_input_stage():
+    """输入阶段 - 左侧输入框，右侧等待/显示结果"""
+    left_col, right_col = st.columns(2)
+
+    with left_col:
+        st.markdown("### 📝 输入你的想法")
+        user_input = st.text_area(
+            "",
+            placeholder="输入提示...",
+            height=300,
+            key="input_text"
+        )
+        if st.button("🚀 开始提炼", use_container_width=True, type="primary"):
+            # 处理逻辑...
+            st.session_state["stage"] = "reviewing"
+            st.rerun()
+
+    with right_col:
+        st.markdown("### 📋 提炼结果")
+        result = st.session_state.get("refined_result", "")
+        if result:
+            st.markdown("<div style='background: #f8f9fa; border-left: 4px solid #667eea; padding: 1.5rem; border-radius: 8px;'>", unsafe_allow_html=True)
+            st.markdown(result)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("点击左侧按钮开始...")
+```
+
+**关键经验**:
+- ✅ 使用 `st.columns(2)` 实现左右等分布局
+- ✅ 使用 `st.rerun()` 在状态变更后重新渲染
+- ✅ 使用 `unsafe_allow_html=True` 允许自定义样式
+- ❌ 避免使用 HTML/CSS flexbox（云端部署不稳定）
+
+### 13.2 多阶段工作流设计
+
+**三阶段状态管理**:
+```
+input → reviewing → saved
+```
+
+**状态定义**:
+```python
+def init_session_state():
+    defaults = {
+        "stage": "input",              # 当前阶段
+        "original_input": "",         # 原始输入
+        "refined_result": "",         # 提炼结果
+        "refinement_history": [],     # 版本历史
+        "current_version": 0,         # 当前版本号
+        "feishu_saved": False,        # 保存状态
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+```
+
+**阶段切换逻辑**:
+```python
+def main():
+    stage = st.session_state.get("stage", "input")
+
+    if stage == "input":
+        render_input_stage()
+    elif stage == "reviewing":
+        render_reviewing_stage()
+    elif stage == "saved":
+        render_saved_stage()
+```
+
+### 13.3 迭代优化功能实现
+
+**核心逻辑**: 基于当前结果 + 修改意见 → 生成新版本
+
+```python
+def refine_thought_with_feedback(
+    original_input: str,
+    current_result: str,
+    feedback: str
+) -> str:
+    """根据反馈意见继续提炼"""
+
+    full_message = f"""原始想法：
+{original_input}
+
+当前提炼结果：
+{current_result}
+
+用户的修改意见：
+{feedback}
+
+请根据用户的修改意见，对当前提炼结果进行调整和优化。"""
+
+    result = deepseek_client.get_response(
+        message=full_message,
+        system_prompt=REFINE_SYSTEM_PROMPT,
+        temperature=0.7,
+        max_tokens=2500
+    )
+
+    return result.get("content", "")
+```
+
+**版本历史记录**:
+```python
+# 记录新版本
+st.session_state["refinement_history"].append({
+    "version": st.session_state["current_version"],
+    "input": f"[修改意见] {feedback}",
+    "output": result
+})
+
+# 显示历史
+for item in reversed(history):
+    expander_title = f"v{item['version']} - {item['input'][:30]}..."
+    with st.expander(expander_title):
+        st.markdown(f"**输入：**\n{item['input']}")
+        st.markdown(f"**结果：**\n{item['output']}")
+```
+
+### 13.4 飞书保存集成
+
+**数据结构映射**:
+```python
+def save_to_feishu(original: str, refined: str) -> bool:
+    record = {
+        "时间": int(datetime.now().timestamp() * 1000),
+        "原始思路": original,
+        "提炼结果": refined,
+        "版本数": st.session_state.get("current_version", 1),
+        "标签": ["思路提炼"]
+    }
+
+    result = feishu_client.add_record_to_bitable(table_id, record)
+    return result.get("success", False)
+```
+
+### 13.5 本次踩坑记录
+
+#### ❌ 语音输入功能失败
+**尝试方案**:
+1. Web Speech API + HTML5 录音按钮
+2. JavaScript 通过 URL 参数传递结果
+3. localStorage 跨窗口通信
+
+**失败原因**:
+- Streamlit 组件运行在 iframe 中，跨域 DOM 访问受限
+- URL 参数刷新方式体验差且不稳定
+- 语音 API 浏览器兼容性差
+
+**最终方案**: 移除语音输入功能，改用原生文本输入
+
+**教训**: 评估功能时要考虑 Streamlit 的架构限制
+
+#### ❌ CSS flexbox 布局在云端失效
+**问题**: 本地开发时 HTML/CSS 双栏布局正常，部署到 Streamlit Cloud 后样式丢失
+
+**原因**: Streamlit Cloud 有 CSP (Content Security Policy) 限制，部分自定义 CSS 会被过滤
+
+**解决**: 改用 `st.columns(2)` 原生布局
+
+**教训**: 优先使用 Streamlit 原生组件，避免过度自定义样式
+
+#### ❌ DeepSeek API 认证错误
+**问题**: 部署后提示 "DeepSeek客户端未初始化"
+
+**原因**: Streamlit Cloud Secrets 配置格式错误
+- ❌ `deepseek_api_key = "xxx"` (小写)
+- ❌ `DEEPSEEK_API_KEY="xxx"` (无空格)
+- ✅ `DEEPSEEK_API_KEY = "xxx"` (大写+空格)
+
+**教训**: TOML 格式要求严格，键名全大写，等号两侧有空格
+
+#### ❌ Secrets.toml 被意外提交
+**问题**: `.gitignore` 配置不正确导致密钥泄露风险
+
+**解决**: 添加 `.streamlit/secrets.toml` 到 `.gitignore`
+
+```gitignore
+# Streamlit secrets
+.streamlit/secrets.toml
+```
+
+### 13.6 项目文件清单
+
+```
+thought_refiner/
+├── app.py                      # 主应用（双栏布局 + 三阶段流程）
+├── deepseek_client.py          # DeepSeek API 客户端
+├── feishu_client.py            # 飞书多维表格客户端
+├── requirements.txt            # Python 依赖
+├── .gitignore                  # Git 忽略规则
+├── .streamlit/
+│   └── secrets.toml            # 本地密钥配置（不上传）
+├── SETUP_GUIDE.md              # 部署配置指南
+└── DEVELOPMENT_SKILLS.md       # 开发技能文档（本文档）
+```
+
+### 13.7 快速启动检查清单
+
+- [ ] 复制项目模板
+- [ ] 配置 `.streamlit/secrets.toml`
+- [ ] 测试本地运行 `streamlit run app.py`
+- [ ] 创建飞书应用并获取 App ID/Secret
+- [ ] 创建飞书多维表格并设置字段
+- [ ] 测试飞书保存功能
+- [ ] 推送到 GitHub
+- [ ] 在 Streamlit Cloud 部署
+- [ ] 配置 Cloud Secrets
+- [ ] 云端测试
+
+---
+
+**最后更新**: 2026-02-09
+**版本**: v1.0.0 - 思路提炼助手最终版
