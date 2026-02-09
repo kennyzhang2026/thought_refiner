@@ -113,70 +113,27 @@ st.markdown("""
         color: #155724;
     }
 
-    /* 语音按钮样式 */
-    .voice-btn-container {
+    /* 左右两栏布局样式 */
+    .two-column-layout {
         display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
+        gap: 2rem;
+        margin: 2rem 0;
     }
 
-    .voice-btn {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        width: 120px;
-        height: 42px;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.3rem;
+    .left-column, .right-column {
+        flex: 1;
     }
 
-    .voice-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    .column-header {
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #333;
     }
 
-    .voice-btn:active {
-        transform: translateY(0);
-    }
-
-    .voice-btn.recording {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        animation: pulse 1.5s infinite;
-    }
-
-    @keyframes pulse {
-        0% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0.4); }
-        70% { box-shadow: 0 0 0 15px rgba(245, 87, 108, 0); }
-        100% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0); }
-    }
-
-    .voice-status {
-        font-size: 0.85rem;
-        color: #666;
+    .refine-button-container {
         text-align: center;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: 200px;
-    }
-
-    .voice-status.recording {
-        color: #f5576c;
-        font-weight: 500;
-        animation: blink 1s infinite;
-    }
-
-    @keyframes blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
+        margin: 2rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -218,13 +175,12 @@ REFINE_SYSTEM_PROMPT = """你是一位专业的思路提炼助手。你的任务
 def init_session_state():
     """初始化会话状态"""
     defaults = {
-        "stage": "input",  # input, refining, review, saved
+        "stage": "input",  # input, reviewing, saved
         "original_input": "",
         "refined_result": "",
-        "conversation_history": [],  # 记录对话历史用于迭代
+        "refinement_history": [],  # 记录提炼历史用于迭代
         "current_version": 0,
         "feishu_saved": False,
-        "voice_result": "",  # 语音识别结果
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -323,284 +279,189 @@ def render_status_badge():
     text, css_class = status_map.get(stage, ("未知", "status-waiting"))
     st.markdown(f'<span class="status-badge {css_class}">{text}</span>', unsafe_allow_html=True)
 
-def render_voice_input():
-    """渲染语音输入组件"""
-    # 使用HTML和JS实现语音录入
-    voice_html = """
-    <div class="voice-btn-container">
-        <button id="voiceBtn" class="voice-btn" onclick="toggleRecording()">
-            <span id="voiceIcon">🎤</span>
-            <span id="voiceText">点击录音</span>
-        </button>
-        <span id="voiceStatus" class="voice-status">点击按钮开始语音输入</span>
-    </div>
-    <input type="hidden" id="voiceResultInput" value="">
-    <div id="voicePreview" style="display:none; margin-top: 10px; padding: 15px; background: #e3f2fd; border-radius: 8px; border-left: 4px solid #667eea;"></div>
-
-    <script>
-        let recognition = null;
-        let isRecording = false;
-        let finalTranscriptText = '';
-
-        // 检查浏览器是否支持语音识别
-        if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-            recognition = new SpeechRecognition();
-            recognition.lang = 'zh-CN';
-            recognition.continuous = false;
-            recognition.interimResults = false;
-
-            recognition.onstart = function() {
-                isRecording = true;
-                document.getElementById('voiceBtn').classList.add('recording');
-                document.getElementById('voiceIcon').textContent = '⏸';
-                document.getElementById('voiceText').textContent = '停止录音';
-                document.getElementById('voiceStatus').textContent = '正在录音...';
-                document.getElementById('voiceStatus').classList.add('recording');
-                finalTranscriptText = '';
-            };
-
-            recognition.onend = function() {
-                isRecording = false;
-                document.getElementById('voiceBtn').classList.remove('recording');
-                document.getElementById('voiceIcon').textContent = '🎤';
-                document.getElementById('voiceText').textContent = '点击录音';
-                document.getElementById('voiceStatus').classList.remove('recording');
-
-                if (finalTranscriptText) {
-                    document.getElementById('voiceStatus').textContent = '识别完成！';
-                    // 显示预览区域
-                    const preview = document.getElementById('voicePreview');
-                    preview.style.display = 'block';
-                    preview.innerHTML = '<strong>语音识别结果：</strong><br><br>' + finalTranscriptText + '<br><br><button onclick="confirmVoice()" style="background: #667eea; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; margin-right: 8px;">✅ 确认插入</button><button onclick="cancelVoice()" style="background: #999; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">❌ 取消</button>';
-                    console.log('语音结果:', finalTranscriptText);
-                } else {
-                    document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
-                }
-            };
-
-            recognition.onresult = function(event) {
-                let transcript = '';
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    transcript += event.results[i][0].transcript;
-                }
-                if (transcript) {
-                    finalTranscriptText = transcript;
-                    document.getElementById('voiceStatus').textContent = '识别中...';
-                }
-            };
-
-            recognition.onerror = function(event) {
-                console.error('语音识别错误:', event.error);
-                let errorMsg = '语音识别出错';
-                if (event.error === 'no-speech') {
-                    errorMsg = '未检测到语音';
-                } else if (event.error === 'not-allowed') {
-                    errorMsg = '麦克风权限被拒绝';
-                }
-                document.getElementById('voiceStatus').textContent = errorMsg;
-                isRecording = false;
-                document.getElementById('voiceBtn').classList.remove('recording');
-                document.getElementById('voiceIcon').textContent = '🎤';
-                document.getElementById('voiceText').textContent = '点击录音';
-            };
-        } else {
-            document.getElementById('voiceStatus').textContent = '您的浏览器不支持语音识别';
-            document.getElementById('voiceBtn').disabled = true;
-            document.getElementById('voiceBtn').style.opacity = '0.5';
-        }
-
-        function toggleRecording() {
-            if (!recognition) {
-                alert('您的浏览器不支持语音识别功能，请使用 Chrome、Edge 或 Safari 浏览器');
-                return;
-            }
-
-            if (isRecording) {
-                recognition.stop();
-            } else {
-                finalTranscriptText = '';
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(function(stream) {
-                        stream.getTracks().forEach(track => track.stop());
-                        recognition.start();
-                    })
-                    .catch(function(err) {
-                        alert('无法访问麦克风，请确保已授予权限');
-                        document.getElementById('voiceStatus').textContent = '麦克风权限被拒绝';
-                    });
-            }
-        }
-
-        function confirmVoice() {
-            const textArea = document.querySelector('textarea[data-testid="stTextArea"]');
-            if (textArea && finalTranscriptText) {
-                const current = textArea.value;
-                textArea.value = current + (current ? '\\n' : '') + finalTranscriptText;
-                textArea.dispatchEvent(new Event('input', { bubbles: true }));
-                textArea.dispatchEvent(new Event('change', { bubbles: true }));
-                textArea.focus();
-                // 隐藏预览
-                document.getElementById('voicePreview').style.display = 'none';
-                document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
-                console.log('文字已插入到文本框');
-            } else {
-                alert('无法找到文本框，请刷新页面重试');
-            }
-        }
-
-        function cancelVoice() {
-            document.getElementById('voicePreview').style.display = 'none';
-            document.getElementById('voiceStatus').textContent = '点击按钮开始语音输入';
-            finalTranscriptText = '';
-        }
-    </script>
-    """
-    st.components.v1.html(voice_html, height=150)
+# 左右两栏布局
 
 def render_input_stage():
     """渲染输入阶段"""
-    st.markdown("### 📝 输入你的想法")
+    st.markdown('<div class="two-column-layout">', unsafe_allow_html=True)
 
-    # 语音输入提示
-    st.caption("🎤 支持语音输入，点击下方按钮")
+    # 左边栏：输入框
+    st.markdown('<div class="left-column">', unsafe_allow_html=True)
+    st.markdown('<h3 class="column-header">📝 输入你的想法</h3>', unsafe_allow_html=True)
 
     user_input = st.text_area(
         "",
-        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析\n\n或者点击下方的语音按钮开始语音输入",
-        height=200,
+        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析",
+        height=300,
         key="input_text"
     )
-
-    # 语音录入按钮和开始提炼按钮并排
-    col1, col2, col3 = st.columns([1, 1, 2])
-
-    with col1:
-        # 语音输入组件
-        render_voice_input()
-
-    with col3:
-        if st.button("🚀 开始提炼", use_container_width=True, type="primary"):
-            # 获取最新的输入值（包括语音输入的）
-            user_input = st.session_state.get("input_text", "")
-            if not user_input.strip():
-                st.warning("⚠️ 请输入内容后再点击提炼")
-                return
-
-            # 更新状态
-            st.session_state["stage"] = "refining"
-            st.session_state["original_input"] = user_input
-            st.session_state["conversation_history"] = []
-
-            # 调用提炼
-            result = refine_thought(user_input)
-
-            if result.startswith("错误:"):
-                st.error(result)
-                st.session_state["stage"] = "input"
-            else:
-                st.session_state["refined_result"] = result
-                st.session_state["current_version"] = 1
-                st.session_state["stage"] = "review"
-
-            st.rerun()
-
-def render_review_stage():
-    """渲染审核/迭代阶段"""
-    st.markdown("### 📋 提炼结果")
-
-    # 显示原始输入（可折叠）
-    with st.expander("📄 查看原始输入"):
-        st.markdown(st.session_state.get("original_input", ""))
-
-    # 显示提炼结果
-    result = st.session_state.get("refined_result", "")
-    st.markdown('<div class="result-card">', unsafe_allow_html=True)
-    st.markdown(result)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # 中间：开始提炼按钮
+    st.markdown('<div class="refine-button-container">', unsafe_allow_html=True)
+    if st.button("🚀 开始提炼", use_container_width=True, type="primary"):
+        user_input = st.session_state.get("input_text", "")
+        if not user_input.strip():
+            st.warning("⚠️ 请输入内容后再点击提炼")
+            return
+
+        # 保存原始输入
+        st.session_state["original_input"] = user_input
+        st.session_state["current_version"] = 1
+
+        # 调用提炼
+        result = refine_thought(user_input)
+
+        if result.startswith("错误:"):
+            st.error(result)
+        else:
+            st.session_state["refined_result"] = result
+            st.session_state["refinement_history"].append({
+                "version": 1,
+                "input": user_input,
+                "output": result
+            })
+            st.session_state["stage"] = "reviewing"
+
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 右边栏：提炼结果
+    st.markdown('<div class="right-column">', unsafe_allow_html=True)
+    st.markdown('<h3 class="column-header">📋 提炼结果</h3>', unsafe_allow_html=True)
+
+    # 显示提炼结果或等待提示
+    result = st.session_state.get("refined_result", "")
+    if result:
+        st.markdown('<div class="result-card">', unsafe_allow_html=True)
+        st.markdown(result)
+        st.markdown('</div>', unsafe_allow_html=True)
+    else:
+        st.info("点击左侧的\"开始提炼\"按钮，AI 将在这里帮你提炼要点、优化结构")
+
     # 版本信息
-    version = st.session_state.get("current_version", 1)
-    if version > 1:
-        st.caption(f"📝 第 {version} 个版本")
+    version = st.session_state.get("current_version", 0)
+    if version > 0:
+        st.caption(f"📝 当前版本: v{version}")
 
-    # 分隔线
-    st.markdown("---")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    # 操作区域
-    st.markdown("### 💬 下一步操作")
+def render_reviewing_stage():
+    """渲染审核/迭代阶段"""
+    st.markdown('<div class="two-column-layout">', unsafe_allow_html=True)
 
+    # 左边栏：当前结果
+    st.markdown('<div class="left-column">', unsafe_allow_html=True)
+    st.markdown('<h3 class="column-header">📋 当前提炼结果 (v{})</h3>'.format(st.session_state.get("current_version", 1)), unsafe_allow_html=True)
+
+    current_result = st.session_state.get("refined_result", "")
+    st.markdown('<div class="result-card">', unsafe_allow_html=True)
+    st.markdown(current_result)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 版本历史
+    history = st.session_state.get("refinement_history", [])
+    if len(history) > 1:
+        st.markdown("### 📜 历史版本")
+        for i, item in enumerate(reversed(history)):
+            expander_title = f"v{item['version']} - {item['input'][:30]}{'...' if len(item['input']) > 30 else ''}"
+            with st.expander(expander_title):
+                st.markdown(f"**输入：**\n{item['input']}")
+                st.markdown(f"**结果：**\n{item['output']}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # 右边栏：操作区
+    st.markdown('<div class="right-column">', unsafe_allow_html=True)
+    st.markdown('<h3 class="column-header">⚙️ 下一步操作</h3>', unsafe_allow_html=True)
+
+    # 两个按钮并排
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("**满意吗？输入OK保存**")
-        user_feedback = st.text_input(
-            "",
-            placeholder="输入 OK 保存到飞书，或输入修改意见继续优化...",
-            key="feedback_input"
-        )
-
-        if st.button("✅ 提交", use_container_width=True):
-            if not user_feedback.strip():
-                st.warning("请输入内容")
-                return
-
-            feedback = user_feedback.strip().lower()
-
-            if feedback == "ok":
-                # 保存到飞书
-                st.session_state["stage"] = "refining"
-                st.rerun()
-
-                original = st.session_state.get("original_input", "")
-                refined = st.session_state.get("refined_result", "")
-
-                if save_to_feishu(original, refined):
-                    st.session_state["stage"] = "saved"
-                    st.session_state["feishu_saved"] = True
-                    st.success("🎉 已成功保存到飞书多维表格！")
-                else:
-                    st.error("❌ 保存到飞书失败，请检查配置")
-                    st.session_state["stage"] = "review"
-
-                st.rerun()
+        if st.button("✅ 确认并保存", use_container_width=True, type="primary", key="confirm_btn"):
+            original = st.session_state.get("original_input", "")
+            refined = st.session_state.get("refined_result", "")
+            if save_to_feishu(original, refined):
+                st.session_state["feishu_saved"] = True
+                st.session_state["stage"] = "saved"
+                st.success("🎉 已成功保存到飞书多维表格！")
             else:
-                # 继续迭代
-                st.session_state["stage"] = "refining"
-                st.rerun()
-
-                # 调用DeepSeek进行修改
-                history = st.session_state.get("conversation_history", [])
-                new_result = refine_thought(user_feedback, history)
-
-                if new_result.startswith("错误:"):
-                    st.error(new_result)
-                else:
-                    # 更新历史记录
-                    history.append({
-                        "version": version,
-                        "feedback": user_feedback,
-                        "result": new_result
-                    })
-                    st.session_state["conversation_history"] = history
-                    st.session_state["refined_result"] = new_result
-                    st.session_state["current_version"] = version + 1
-                    st.session_state["stage"] = "review"
-
-                st.rerun()
+                st.error("❌ 保存到飞书失败，请检查配置")
+            st.rerun()
 
     with col2:
-        st.markdown("**或选择其他操作**")
+        st.markdown("#### 继续优化")
+        feedback = st.text_area(
+            "",
+            placeholder="输入修改意见，如：\n- 请补充更多细节\n- 简化第三点\n- 调整格式\n\n或者直接点击\"确认并保存\"",
+            height=150,
+            key="feedback_text"
+        )
 
-        if st.button("🔄 重新开始", use_container_width=True):
-            # 重置状态
-            st.session_state["stage"] = "input"
-            st.session_state["original_input"] = ""
-            st.session_state["refined_result"] = ""
-            st.session_state["conversation_history"] = []
-            st.session_state["current_version"] = 0
-            st.session_state["feishu_saved"] = False
+        if st.button("🔄 继续提炼", use_container_width=True, key="continue_btn"):
+            feedback = st.session_state.get("feedback_text", "")
+            if not feedback.strip():
+                st.warning("⚠️ 请输入修改意见")
+                return
+
+            # 调用 DeepSeek 继续提炼
+            with st.spinner("🤖 AI 正在根据你的意见调整..."):
+                result = refine_thought_with_feedback(
+                    original_input=st.session_state.get("original_input", ""),
+                    current_result=st.session_state.get("refined_result", ""),
+                    feedback=feedback
+                )
+
+            if result.startswith("错误:"):
+                st.error(result)
+            else:
+                st.session_state["refined_result"] = result
+                st.session_state["current_version"] += 1
+                st.session_state["refinement_history"].append({
+                    "version": st.session_state["current_version"],
+                    "input": f"[修改意见] {feedback}",
+                    "output": result
+                })
+                st.session_state["feedback_text"] = ""
+                st.success(f"✅ 已更新到 v{st.session_state['current_version']}")
+
             st.rerun()
+
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def refine_thought_with_feedback(original_input: str, current_result: str, feedback: str) -> str:
+    """根据反馈意见继续提炼"""
+    deepseek_client, _ = get_clients()
+
+    if not deepseek_client or not deepseek_client.client:
+        return "错误: DeepSeek客户端未初始化，请检查API Key配置"
+
+    full_message = f"""原始想法：
+{original_input}
+
+当前提炼结果：
+{current_result}
+
+用户的修改意见：
+{feedback}
+
+请根据用户的修改意见，对当前提炼结果进行调整和优化。保持之前的结构，但按照用户的要求进行修改。"""
+
+    with st.spinner("🤖 AI正在调整提炼结果..."):
+        result = deepseek_client.get_response(
+            message=full_message,
+            system_prompt=REFINE_SYSTEM_PROMPT,
+            temperature=0.7,
+            max_tokens=2500
+        )
+
+    if result.get("success"):
+        return result.get("content", "")
+    else:
+        return f"错误: {result.get('error', '未知错误')}"
 
 def render_saved_stage():
     """渲染保存完成阶段"""
@@ -672,23 +533,10 @@ def main():
 
     if stage == "input":
         render_input_stage()
-    elif stage == "refining":
-        # 提炼中状态，显示加载
-        st.spinner("🤖 AI正在处理...")
-        # 实际处理在按钮点击时完成，这里只是一个过渡状态
-    elif stage == "review":
-        render_review_stage()
+    elif stage == "reviewing":
+        render_reviewing_stage()
     elif stage == "saved":
         render_saved_stage()
-
-    # 渲染提示信息
-    if stage == "review":
-        st.markdown("""
-        <div class="tip-box">
-        💡 <strong>提示</strong>：如果结果满意，输入 <strong>OK</strong> 保存到飞书；
-        如果需要调整，直接输入修改意见，如"请补充更多细节"或"简化第三点"。
-        </div>
-        """, unsafe_allow_html=True)
 
 # ============ 运行应用 ============
 if __name__ == "__main__":
