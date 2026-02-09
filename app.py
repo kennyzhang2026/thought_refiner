@@ -282,104 +282,94 @@ def render_status_badge():
 # 左右两栏布局
 
 def render_input_stage():
-    """渲染输入阶段"""
-    st.markdown('<div class="two-column-layout">', unsafe_allow_html=True)
+    """渲染输入阶段 - 使用 Streamlit 原生 columns"""
+    # 创建左右两栏
+    left_col, right_col = st.columns(2)
 
-    # 左边栏：输入框
-    st.markdown('<div class="left-column">', unsafe_allow_html=True)
-    st.markdown('<h3 class="column-header">📝 输入你的想法</h3>', unsafe_allow_html=True)
+    with left_col:
+        st.markdown("### 📝 输入你的想法")
 
-    user_input = st.text_area(
-        "",
-        placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析",
-        height=300,
-        key="input_text"
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
+        user_input = st.text_area(
+            "",
+            placeholder="在这里输入你的想法、笔记或任何需要整理的内容...\n\n比如：\n- 会议记录\n- 项目思路\n- 读书笔记\n- 问题分析",
+            height=300,
+            key="input_text"
+        )
 
-    # 中间：开始提炼按钮
-    st.markdown('<div class="refine-button-container">', unsafe_allow_html=True)
-    if st.button("🚀 开始提炼", use_container_width=True, type="primary"):
-        user_input = st.session_state.get("input_text", "")
-        if not user_input.strip():
-            st.warning("⚠️ 请输入内容后再点击提炼")
-            return
+        # 开始提炼按钮放在左边栏底部
+        if st.button("🚀 开始提炼", use_container_width=True, type="primary"):
+            user_input = st.session_state.get("input_text", "")
+            if not user_input.strip():
+                st.warning("⚠️ 请输入内容后再点击提炼")
+                return
 
-        # 保存原始输入
-        st.session_state["original_input"] = user_input
-        st.session_state["current_version"] = 1
+            # 保存原始输入
+            st.session_state["original_input"] = user_input
+            st.session_state["current_version"] = 1
 
-        # 调用提炼
-        result = refine_thought(user_input)
+            # 调用提炼 - 显示加载状态
+            with st.spinner("🤖 AI 正在提炼中..."):
+                result = refine_thought(user_input)
 
-        if result.startswith("错误:"):
-            st.error(result)
+            if result.startswith("错误:"):
+                st.error(result)
+            else:
+                st.session_state["refined_result"] = result
+                st.session_state["refinement_history"].append({
+                    "version": 1,
+                    "input": user_input,
+                    "output": result
+                })
+                st.session_state["stage"] = "reviewing"
+                st.rerun()
+
+    with right_col:
+        st.markdown("### 📋 提炼结果")
+
+        # 显示提炼结果或等待提示
+        result = st.session_state.get("refined_result", "")
+        if result:
+            st.markdown("<div style='background: #f8f9fa; border-left: 4px solid #667eea; padding: 1.5rem; border-radius: 8px;'>", unsafe_allow_html=True)
+            st.markdown(result)
+            st.markdown("</div>", unsafe_allow_html=True)
         else:
-            st.session_state["refined_result"] = result
-            st.session_state["refinement_history"].append({
-                "version": 1,
-                "input": user_input,
-                "output": result
-            })
-            st.session_state["stage"] = "reviewing"
+            st.info("点击左侧的\"开始提炼\"按钮，AI 将在这里帮你提炼要点、优化结构")
 
-        st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # 右边栏：提炼结果
-    st.markdown('<div class="right-column">', unsafe_allow_html=True)
-    st.markdown('<h3 class="column-header">📋 提炼结果</h3>', unsafe_allow_html=True)
-
-    # 显示提炼结果或等待提示
-    result = st.session_state.get("refined_result", "")
-    if result:
-        st.markdown('<div class="result-card">', unsafe_allow_html=True)
-        st.markdown(result)
-        st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.info("点击左侧的\"开始提炼\"按钮，AI 将在这里帮你提炼要点、优化结构")
-
-    # 版本信息
-    version = st.session_state.get("current_version", 0)
-    if version > 0:
-        st.caption(f"📝 当前版本: v{version}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+        # 版本信息
+        version = st.session_state.get("current_version", 0)
+        if version > 0:
+            st.caption(f"📝 当前版本: v{version}")
 
 def render_reviewing_stage():
-    """渲染审核/迭代阶段"""
-    st.markdown('<div class="two-column-layout">', unsafe_allow_html=True)
+    """渲染审核/迭代阶段 - 使用 Streamlit 原生 columns"""
+    # 创建左右两栏
+    left_col, right_col = st.columns(2)
 
-    # 左边栏：当前结果
-    st.markdown('<div class="left-column">', unsafe_allow_html=True)
-    st.markdown('<h3 class="column-header">📋 当前提炼结果 (v{})</h3>'.format(st.session_state.get("current_version", 1)), unsafe_allow_html=True)
+    with left_col:
+        st.markdown(f"### 📋 当前提炼结果 (v{st.session_state.get('current_version', 1)})")
 
-    current_result = st.session_state.get("refined_result", "")
-    st.markdown('<div class="result-card">', unsafe_allow_html=True)
-    st.markdown(current_result)
-    st.markdown('</div>', unsafe_allow_html=True)
+        current_result = st.session_state.get("refined_result", "")
+        if current_result:
+            st.markdown("<div style='background: #f8f9fa; border-left: 4px solid #667eea; padding: 1.5rem; border-radius: 8px;'>", unsafe_allow_html=True)
+            st.markdown(current_result)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.warning("没有提炼结果，请返回输入阶段")
 
-    # 版本历史
-    history = st.session_state.get("refinement_history", [])
-    if len(history) > 1:
-        st.markdown("### 📜 历史版本")
-        for i, item in enumerate(reversed(history)):
-            expander_title = f"v{item['version']} - {item['input'][:30]}{'...' if len(item['input']) > 30 else ''}"
-            with st.expander(expander_title):
-                st.markdown(f"**输入：**\n{item['input']}")
-                st.markdown(f"**结果：**\n{item['output']}")
+        # 版本历史
+        history = st.session_state.get("refinement_history", [])
+        if len(history) > 1:
+            st.markdown("### 📜 历史版本")
+            for i, item in enumerate(reversed(history)):
+                expander_title = f"v{item['version']} - {item['input'][:30]}{'...' if len(item['input']) > 30 else ''}"
+                with st.expander(expander_title):
+                    st.markdown(f"**输入：**\n{item['input']}")
+                    st.markdown(f"**结果：**\n{item['output']}")
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    with right_col:
+        st.markdown("### ⚙️ 下一步操作")
 
-    # 右边栏：操作区
-    st.markdown('<div class="right-column">', unsafe_allow_html=True)
-    st.markdown('<h3 class="column-header">⚙️ 下一步操作</h3>', unsafe_allow_html=True)
-
-    # 两个按钮并排
-    col1, col2 = st.columns(2)
-
-    with col1:
+        # 确认并保存按钮
         if st.button("✅ 确认并保存", use_container_width=True, type="primary", key="confirm_btn"):
             original = st.session_state.get("original_input", "")
             refined = st.session_state.get("refined_result", "")
@@ -387,21 +377,25 @@ def render_reviewing_stage():
                 st.session_state["feishu_saved"] = True
                 st.session_state["stage"] = "saved"
                 st.success("🎉 已成功保存到飞书多维表格！")
+                st.rerun()
             else:
                 st.error("❌ 保存到飞书失败，请检查配置")
-            st.rerun()
 
-    with col2:
-        st.markdown("#### 继续优化")
+        st.markdown("---")
+
+        # 继续优化区域
+        st.markdown("#### 🔄 继续优化")
+        st.caption("输入修改意见，AI 将基于当前结果进行调整")
+
         feedback = st.text_area(
-            "",
-            placeholder="输入修改意见，如：\n- 请补充更多细节\n- 简化第三点\n- 调整格式\n\n或者直接点击\"确认并保存\"",
-            height=150,
-            key="feedback_text"
+            "修改意见",
+            placeholder="例如：\n- 请补充更多细节\n- 简化第三点\n- 调整格式",
+            height=120,
+            key="feedback_text",
+            label_visibility="collapsed"
         )
 
         if st.button("🔄 继续提炼", use_container_width=True, key="continue_btn"):
-            feedback = st.session_state.get("feedback_text", "")
             if not feedback.strip():
                 st.warning("⚠️ 请输入修改意见")
                 return
@@ -424,13 +418,8 @@ def render_reviewing_stage():
                     "input": f"[修改意见] {feedback}",
                     "output": result
                 })
-                st.session_state["feedback_text"] = ""
                 st.success(f"✅ 已更新到 v{st.session_state['current_version']}")
-
-            st.rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+                st.rerun()
 
 def refine_thought_with_feedback(original_input: str, current_result: str, feedback: str) -> str:
     """根据反馈意见继续提炼"""
