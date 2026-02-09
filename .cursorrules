@@ -1,0 +1,205 @@
+# Cursor Rules - 思路提炼助手开发规范
+
+## 参考文档
+
+> 开发前必读：@DEVELOPMENT_SKILLS.md
+
+本文档包含 Streamlit + AI API + 第三方集成的完整开发经验，特别是第13章"思路提炼助手项目 - 专项技能"。
+
+## 技术栈规范
+
+### 必选
+- **UI 框架**: Streamlit (Python)
+- **AI 服务**: DeepSeek API / OpenAI API
+- **数据存储**: 飞书多维表格 / Notion / Airtable
+
+### 可选
+- **图片处理**: PIL/Pillow
+- **数据验证**: Pydantic
+- **日志**: Python logging
+
+## 代码结构规范
+
+### 项目目录结构
+```
+my-project/
+├── app.py                      # 主应用（双栏布局 + 三阶段流程）
+├── deepseek_client.py          # AI API 客户端
+├── storage_client.py           # 存储服务客户端
+├── requirements.txt            # Python 依赖
+├── .gitignore                  # Git 忽略规则
+├── .streamlit/
+│   └── secrets.toml            # 本地密钥配置（不上传）
+└── .cursorrules                # 本文件
+```
+
+### 关键开发模式
+
+#### 1. 双栏布局（参考 DEVELOPMENT_SKILLS.md 13.1）
+```python
+def render_input_stage():
+    left_col, right_col = st.columns(2)
+
+    with left_col:
+        # 输入区域
+        pass
+
+    with right_col:
+        # 结果显示区域
+        pass
+```
+
+**必须遵循**:
+- ✅ 使用 `st.columns(2)` 实现左右等分
+- ✅ 使用 `st.rerun()` 在状态变更后重新渲染
+- ❌ 禁止使用 HTML/CSS flexbox（云端部署不稳定）
+
+#### 2. 多阶段工作流（参考 DEVELOPMENT_SKILLS.md 13.2）
+```python
+# 三阶段：input → reviewing → saved
+def init_session_state():
+    defaults = {
+        "stage": "input",
+        "original_input": "",
+        "result": "",
+        "history": [],
+        "version": 0,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+```
+
+#### 3. 迭代优化功能（参考 DEVELOPMENT_SKILLS.md 13.3）
+```python
+def refine_with_feedback(original, current, feedback):
+    """基于当前结果 + 修改意见 → 生成新版本"""
+    full_message = f"""原始输入：
+{original}
+
+当前结果：
+{current}
+
+修改意见：
+{feedback}
+
+请根据修改意见调整..."""
+
+    return ai_client.get_response(full_message)
+```
+
+#### 4. 客户端封装（参考 DEVELOPMENT_SKILLS.md 1.2）
+```python
+class AIClient:
+    def __init__(self, api_key=None):
+        self.api_key = api_key or st.secrets.get("API_KEY")
+        if not self.api_key:
+            raise ValueError("未找到 API Key")
+        self.client = self._init_client()
+```
+
+## 配置管理规范
+
+### Secrets 配置格式（TOML）
+```toml
+# .streamlit/secrets.toml
+DEEPSEEK_API_KEY = "your_key"      # ✅ 全大写，等号两侧有空格
+FEISHU_APP_ID = "your_id"
+FEISHU_APP_SECRET = "your_secret"
+```
+
+### 读取方式
+```python
+api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
+```
+
+## UI/UX 规范
+
+### 必做
+- [ ] 双栏布局：左侧输入，右侧结果
+- [ ] 加载状态：使用 `st.spinner()`
+- [ ] 错误提示：清晰的错误信息 + 解决建议
+- [ ] 版本历史：使用 `st.expander()` 展示
+
+### 禁止
+- [ ] 语音输入（Streamlit iframe 限制）
+- [ ] 复杂 CSS 动画（CSP 限制）
+- [ ] 硬编码密钥到代码中
+
+## 部署规范
+
+### 本地开发
+```bash
+streamlit run app.py
+```
+
+### 部署到 Streamlit Cloud
+1. 推送到 GitHub
+2. 连接 Streamlit Cloud
+3. 在 Settings → Secrets 中配置密钥
+4. 格式必须与 secrets.toml 一致
+
+### Git 忽略清单
+```gitignore
+# .gitignore
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+```
+
+## 代码审查清单
+
+在提交代码前检查：
+
+- [ ] 双栏布局使用 `st.columns(2)` 而非 HTML/CSS
+- [ ] Session State 初始化完整
+- [ ] 错误处理包含用户友好的提示
+- [ ] 没有硬编码的密钥
+- [ ] `.gitignore` 包含 secrets.toml
+- [ ] 本地测试通过
+- [ ] 迭代功能支持版本历史
+
+## 常见问题解决方案
+
+### Q: 云端部署后样式丢失
+**原因**: CSP 限制
+**解决**: 使用 Streamlit 原生组件
+
+### Q: API 认证失败
+**原因**: Secrets 格式错误
+**解决**: 检查 TOML 格式（全大写键名，等号两侧空格）
+
+### Q: 状态切换后页面不更新
+**原因**: 未调用 rerun
+**解决**: 在状态变更后调用 `st.rerun()`
+
+## AI 辅助开发提示
+
+当用户要求开发新项目时：
+
+1. **首先阅读** @DEVELOPMENT_SKILLS.md 第13章
+2. **确认需求**: 是否需要双栏布局？是否需要迭代优化？
+3. **复制模板**: 基于 thought_refiner 项目结构
+4. **修改适配**: 根据新需求调整提示词和字段
+5. **测试验证**: 本地测试通过后再部署
+
+## 示例新项目描述
+
+用户可以复制以下模板描述新项目：
+
+```markdown
+项目名称：XXX助手
+功能目标：帮助用户做 XXX
+参考技能：
+- 双栏布局（DEVELOPMENT_SKILLS.md 13.1）
+- 迭代优化（13.3）
+- 飞书保存（13.4）
+
+特殊需求：
+- [自定义需求]
+```
+
+---
+
+**最后更新**: 2026-02-09
+**版本**: v1.0.0
